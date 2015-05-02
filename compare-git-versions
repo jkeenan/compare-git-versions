@@ -1,4 +1,3 @@
-# perl
 use strict;
 use warnings;
 use 5.10.1;
@@ -7,22 +6,177 @@ use Data::Dump;
 use Carp;
 use File::Spec;
 use Getopt::Long;
+our $VERSION = 0.01;
 
 my ($workdir, $program, $before, $after, $benchmarks_only, $tests_only, $verbose);
 my ($blib_lib_dir, $cmd);
 
-=pod
+=head1 NAME
 
-    perl compare_git_versions.pl \
-        --workdir=/home/jkeenan/gitwork/list-compare \
-        --program=/home/jkeenan/learn/perl/lc/getcomp.pl \
+compare-git-versions - Command-line utility for benchmarking and testing
+
+=head1 SYNOPSIS
+
+    perl compare-git-versions \
+        --workdir=/home/perlhacker/gitwork/list-compare \
+        --program=/home/perlhacker/learn/perl/lc/getcomp.pl \
         --before=v0.38 \
         --after=master \
-        --tests-only \  # or --benchmarks-only
+        --tests-only \
         --verbose
+   # or, instead of 'tests-only':
+
+        --benchmarks-only
+
+=head1 DESCRIPTION
+
+This program is a command-line utility intended to facilitate the refactoring
+of Perl library functions for the purpose of improving their speed of execution.
+This program will be useful to you if:
+
+=over 4
+
+=item *
+
+Your functions are found in typical Perl modules (F<.pm> files) with a defined
+C<$VERSION>.
+
+=item *
+
+You already have a robust test suite for the library, so you will be instantly
+alerted if you break code during refactoring.
+
+=item *
+
+You keep your code in version control using git.
+
+=back
+
+=head1 WORKFLOW
+
+=head2 The Direct Benchmark/Test Program
+
+In a directory dedicated to holding files for work on a particular library,
+write a Perl program in which, at a minimum, you import Benchmark and
+Test::More:
+
+    # /home/perlhacker/learn/perl/lc/gitcomp.pl
+    use strict;
+    use warnings;
+    use Test::More qw( no_plan );
+    use Benchmark qw( timethese timethis );
+
+Add to your Perl library path (C<@INC>) the full path to the F<blib/lib/>
+directory underneath the git checkout directory in which you customarily work
+on the library in question.
+
+    use lib '/home/perlhacker/gitwork/list-compare/blib/lib';
+
+Import the library and, if needed, the functions whose performance you want to
+improve via refactoring:
+
+    use List::Compare::Functional qw( get_intersection get_intersection_ref );
+
+Create the data you will use for testing and benchmarking:
+
+    my $fg      = [ qw( fargo golfer ) ];
+    my $fgh     = [ qw( fargo golfer hilton ) ];
+    my $fghi    = [ qw( edward fargo golfer hilton icon ) ];
+    my $bcdefg  = [ qw( baker camera delta edward fargo golfer ) ];
+
+Announce on STDOUT the C<$VERSION> of the Perl module you are working on:
+
+    say "LCF version: ", sprintf("%.5f" => $List::Compare::Functional::VERSION);
+
+Set up arguments to be used in testing as well as expected results of tests.
+
+    $args =  [ $fg, $fghi, $fgh, $bcdefg, $fghi ];
+    $expect = { map { $_ => 1 } ( qw| fargo golfer | ) };
+
+Run a test of the function you are working on; make sure the tests pass.
+
+    @i     = get_intersection($args);
+    is_deeply( { map { $_ => 1 } @i }, $expect,
+        "List::Compare::Functional::get_intersection() gave expected results");
+
+    $i_ref = get_intersection_ref($args);
+    is_deeply( { map { $_ => 1 } @{$i_ref} }, $expect,
+        "List::Compare::Functional::get_intersection_ref() gave expected results");
+
+Benchmark the function.
+
+    timethis( 100_000, sub { get_intersection_ref($args) } );
+
+You should be able to run this program from the command-line and observe the
+C<$VERSION>, the test results and the benchmark results.
+
+=head2 Running F<compare-git-versions>
+
+You will now use F<compare-git-versions> to run the direct program first on the
+git commit you are starting from and then on the your most recent git commit.
+
+    perl compare-git-versions.pl \
+        --workdir=/home/perlhacker/gitwork/list-compare \
+        --program=/home/perlhacker/learn/perl/lc/getcomp.pl \
+        --before=v0.38 \
+        --after=master \
+        --tests-only \
+        --verbose
+   # or, instead of 'tests-only':
+
+        --benchmarks-only
+
+=head3 Command-line options
+
+All command-line options use the double-hyphen syntax.
+
+=over 4
+
+=item * C<workdir>
+
+The full path to your git checkout directory.
+
+=item * C<program>
+
+The full path to the direct program described above.
+
+=item * C<before>
+
+A string holding the git branch, tag, or commit against which you wish to benchmark your changes.
+
+=item * C<after>
+
+A string holding the git branch, tag, or commit you wish to benchmark.
+
+=item * C<benchmarks-only>
+
+Run only benchmarking in the direct program.
+
+=item * C<tests=only>
+
+Run only tests in the direct program.
+
+=item * C<verbose>
+
+If set to true value, will be passed through to the direct program and, if the
+direct program accepts it as a command-line switch, will generate verbose
+output.
+
+=back
+ 
+You may select either C<--benchmarks-only> or C<--tests-only> but not both simultaneously.
+
+=head1 BUGS
+
+Send bug reports or feedback to jkeenan at cpan dot org.
+
+=head1 LICENSE
+
+This program is licensed under the same terms as Perl itself.  No warranty
+express or implied.  Copyright 2015 James E Keenan.
 
 =cut
-     
+
 GetOptions(
     "workdir=s"         => \$workdir,
     "program=s"         => \$program,

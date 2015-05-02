@@ -1,0 +1,8 @@
+This directory holds Perl programs which played the role of "direct programs"
+run by git-compare-versions.  These particular programs were among those I
+used when doing refactoring of List-Compare functions in early 2015.
+
+Treat them as sample programs only since, among other things, the paths in
+these programs will not work on your machines.  The main thing to get out of
+these sample programs is the presence of calls to both Test::More functions
+and Benchmark programs within the same Perl program.
