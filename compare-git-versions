@@ -106,17 +106,50 @@ system("make -s clean") and croak "Unable to 'make -s clean'";
 
 =head1 WORKFLOW
 
+=head2 Source Code Revisions
+
+Starting from your library's master branch, create a new branch in which you
+refactor the code in the hope of making it run faster.
+
+    git checkout -b refactored
+
+    # Hack, hack, hack
+
+    git add ...
+
+    git commit -m "Refactored guts of is_LsubsetR() to make it faster."
+
+Make sure all the library's existing tests continue to pass.
+
+    perl Makefile.PL
+    make
+    make test
+
+Debug all failing tests before proceeding.
+
 =head2 The Direct Benchmark/Test Program
 
-In a directory dedicated to holding files for work on a particular library,
-write a Perl program in which, at a minimum, you import Benchmark and
-Test::More:
+In this documentation a B<Direct> program is a simple Perl program which
+offers command-line switches for either testing or benchmarking library
+functions which you wish to refactor.
 
-    # /home/perlhacker/learn/perl/lc/gitcomp.pl
+=over 4
+
+=item *
+
+In a directory dedicated to holding files for work on a particular library,
+write a Perl program in which, at a minimum, you import Benchmark,
+Test::More, Getopt::Long and Carp:
+
+    # /home/perlhacker/learn/perl/lc/subset.pl
     use strict;
     use warnings;
     use Test::More qw( no_plan );
-    use Benchmark qw( timethese timethis );
+    use Benchmark qw( timethis );
+    use Getopt::Long;
+    use Carp;
+
+=item *
 
 Add to your Perl library path (C<@INC>) the full path to the F<blib/lib/>
 directory underneath the git checkout directory in which you customarily work
@@ -124,52 +157,140 @@ on the library in question.
 
     use lib '/home/perlhacker/gitwork/list-compare/blib/lib';
 
-Import the library and, if needed, the functions whose performance you want to
-improve via refactoring:
+=item *
 
-    use List::Compare::Functional qw( get_intersection get_intersection_ref );
+Import the library and, if needed, the particular functions whose performance
+you want to improve via refactoring:
+
+    use List::Compare::Functional qw( is_LsubsetR );
+
+=item *
+
+Include the following code for the purpose of processing command-line options:
+
+    my ($tests_only, $benchmarks_only, $verbose) = (0,0,0);
+
+    GetOptions(
+        "tests-only"        => \$tests_only,
+        "benchmarks-only"   => \$benchmarks_only,
+        "verbose"           => \$verbose,
+    ) or croak("Error in command line arguments");
+    croak("Select either 'tests-only' or 'benchmarks-only' -- but not both!")
+        if ($tests_only && $benchmarks_only);
+    if ($benchmarks_only) { pass("Running benchmarks only") };
+    if ($tests_only) { pass("Running tests only") };
+
+This code permits you to control, from command-line options, whether you are
+running the program for testing, for benchmarking or for both and whether you
+are requesting any verbose output.
+
+=item *
 
 Create the data you will use for testing and benchmarking:
 
-    my $fg      = [ qw( fargo golfer ) ];
-    my $fgh     = [ qw( fargo golfer hilton ) ];
-    my $fghi    = [ qw( edward fargo golfer hilton icon ) ];
-    my $bcdefg  = [ qw( baker camera delta edward fargo golfer ) ];
+    my $aabcdefg = [ qw(abel abel baker camera delta edward fargo golfer) ];
+    my $bcddefgh = [ qw(baker camera delta delta edward fargo golfer hilton) ];
+    my $fghiij   = [ qw(fargo golfer hilton icon icon jerky) ];
+    my $fghii    = [ qw(fargo golfer hilton icon icon) ];
+    my $ffghi    = [ qw(fargo fargo golfer hilton icon) ];
 
-Announce on STDOUT the C<$VERSION> of the Perl module you are working on:
+=item *
 
-    say "LCF version: ", sprintf("%.5f" => $List::Compare::Functional::VERSION);
+Declare any variables to be used in testing or benchmark functions:
 
-Set up arguments to be used in testing as well as expected results of tests.
+    my ($args, $result);
+
+Populate the list of arguments such that the same list can be used in both
+testing and benchmarking.
 
     $args =  [ $fg, $fghi, $fgh, $bcdefg, $fghi ];
-    $expect = { map { $_ => 1 } ( qw| fargo golfer | ) };
 
-Run a test of the function you are working on; make sure the tests pass.
+=item *
 
-    @i     = get_intersection($args);
-    is_deeply( { map { $_ => 1 } @i }, $expect,
-        "List::Compare::Functional::get_intersection() gave expected results");
+Create a block in which you write and run tests of the function you wish to
+refactor.  This block will B<not> be run if you call the Direct program with
+C<--benchmarks-only> on the command line.
 
-    $i_ref = get_intersection_ref($args);
-    is_deeply( { map { $_ => 1 } @{$i_ref} }, $expect,
-        "List::Compare::Functional::get_intersection_ref() gave expected results");
+    unless ($benchmarks_only) {
+        $result = is_LsubsetR( $args, [ 3,2 ] );
+        ok($result, "Got expected subset relationship");
 
-Benchmark the function.
+        $result = is_LsubsetR( $args, [ 2,3 ] );
+        ok(! $result, "Got expected subset relationship");
 
-    timethis( 100_000, sub { get_intersection_ref($args) } );
+        $result = is_LsubsetR( $args );
+        ok(! $result, "Got expected subset relationship");
+    }
 
-You should be able to run this program from the command-line and observe the
-C<$VERSION>, the test results and the benchmark results.
+You can probably adapt tests in your library's existing test suite for use
+inside the Direct program.
+
+=item *
+
+Next, create a block in which you construct benchmarks of the function you
+wish to refactor.  This block will B<not> be run if you call the Direct
+program with C<--tests-only> on the command line.
+
+    unless ($tests_only) {
+        timethis( 20_000, sub { is_LsubsetR( $args, [ 3,2 ] ) } );
+        timethis( 20_000, sub { is_LsubsetR( $args, [ 2,3 ] ) } );
+        timethis( 20_000, sub { is_LsubsetR( $args          ) } );
+    }
+
+=back
+
+You should be able to run this program from the command-line and observe
+different output depending on whether you chose C<--tests-only>,
+C<--benchmarks-only> or neither.
+
+    $ perl subset.pl --tests-only
+    ok 1 - Running tests only
+    ok 2 - Got expected subset relationship
+    ok 3 - Got expected subset relationship
+    ok 4 - Got expected subset relationship
+    1..4
+
+    $ perl subset.pl --benchmarks-only
+    ok 1 - Running benchmarks only
+    timethis 20000:  2 wallclock secs ( 1.73 usr +  0.00 sys =  1.73 CPU) @ 11560.69/s (n=20000)
+    timethis 20000:  2 wallclock secs ( 1.73 usr +  0.00 sys =  1.73 CPU) @ 11560.69/s (n=20000)
+    timethis 20000:  1 wallclock secs ( 1.70 usr +  0.00 sys =  1.70 CPU) @ 11764.71/s (n=20000)
+    1..1
+
+    $ perl subset.pl
+    ok 1 - Got expected subset relationship
+    ok 2 - Got expected subset relationship
+    ok 3 - Got expected subset relationship
+    timethis 20000:  2 wallclock secs ( 1.72 usr +  0.00 sys =  1.72 CPU) @ 11627.91/s (n=20000)
+    timethis 20000:  1 wallclock secs ( 1.72 usr +  0.00 sys =  1.72 CPU) @ 11627.91/s (n=20000)
+    timethis 20000:  2 wallclock secs ( 1.68 usr +  0.00 sys =  1.68 CPU) @ 11904.76/s (n=20000)
+    1..3
+
+You are now in a position to customize your Direct program, I<e.g.,> by adding
+debugging statements which only print if the program has been called with
+C<--verbose> on the command line.
+
+=cut
 
 =head2 Running F<compare-git-versions>
 
-You will now use F<compare-git-versions> to run the direct program first on the
-git commit you are starting from and then on the your most recent git commit.
+F<compare-git-versions> is a B<Wrapper> program which runs your B<Direct>
+program twice, once in a B<"before refactoring" state> and once in a B<"after
+refactoring"> state.  F<compare-git-versions> performs a F<git checkout> of
+the (presumably) older version of the code, runs the Direct program printing
+results to STDOUT, then performs a checkout of your (presumably) revised
+version of the code and re-runs the Direct program.
 
-    perl compare-git-versions.pl \
+The command-line options you choose for F<compare-git-versions> are, as
+needed, passed to the command-line of the Direct program.  In this way, you
+can use the Wrapper program to run only tests in the two different versions of
+the Direct program; run only benchmarks in the two versions of the Direct
+program; or run both tests and benchmarks of the two versions of the Direct
+program.
+
+    perl compare-git-versions \
         --workdir=/home/perlhacker/gitwork/list-compare \
-        --program=/home/perlhacker/learn/perl/lc/getcomp.pl \
+        --program=/home/perlhacker/learn/perl/lc/subset.pl \
         --before=v0.38 \
         --after=master \
         --tests-only \
@@ -190,7 +311,7 @@ The full path to your git checkout directory.
 
 =item * C<program>
 
-The full path to the direct program described above.
+The full path to the Direct program described above.
 
 =item * C<before>
 
@@ -202,21 +323,108 @@ A string holding the git branch, tag, or commit you wish to benchmark.
 
 =item * C<benchmarks-only>
 
-Run only benchmarking in the direct program.
+Run only benchmarking in the Direct program.
 
 =item * C<tests=only>
 
-Run only tests in the direct program.
+Run only tests in the Direct program.
 
 =item * C<verbose>
 
-If set to true value, will be passed through to the direct program and, if the
-direct program accepts it as a command-line switch, will generate verbose
+If set to true value, will be passed through to the Direct program and, if the
+Direct program accepts it as a command-line switch, will generate verbose
 output.
 
 =back
- 
+
 You may select either C<--benchmarks-only> or C<--tests-only> but not both simultaneously.
+
+Example with C<--tests-only>:
+
+    $ perl /home/jkeenan/gitwork/compare-git-versions/compare-git-versions   \
+        --workdir=/home/jkeenan/gitwork/list-compare \
+        --program=/home/jkeenan/learn/perl/lc/subset.pl \
+        --before=master \
+        --after=refactored
+        --tests-only
+    Switched to branch 'master'
+    Your branch is up-to-date with 'origin/master'.
+    Checking if your kit is complete...
+    Looks good
+    Generating a Unix-style Makefile
+    Writing Makefile for List::Compare
+    Writing MYMETA.yml and MYMETA.json
+    cp lib/List/Compare/Functional.pm blib/lib/List/Compare/Functional.pm
+    cp lib/List/Compare.pm blib/lib/List/Compare.pm
+    cp lib/List/Compare/Base/_Engine.pm blib/lib/List/Compare/Base/_Engine.pm
+    cp lib/List/Compare/Base/_Auxiliary.pm blib/lib/List/Compare/Base/_Auxiliary.pm
+    Manifying 4 pod documents
+    ok 1 - Running tests only
+    ok 2 - Got expected subset relationship
+    ok 3 - Got expected subset relationship
+    ok 4 - Got expected subset relationship
+    1..4
+    Switched to branch 'refactored'
+    Checking if your kit is complete...
+    Looks good
+    Generating a Unix-style Makefile
+    Writing Makefile for List::Compare
+    Writing MYMETA.yml and MYMETA.json
+    cp lib/List/Compare/Base/_Auxiliary.pm blib/lib/List/Compare/Base/_Auxiliary.pm
+    cp lib/List/Compare/Functional.pm blib/lib/List/Compare/Functional.pm
+    cp lib/List/Compare/Base/_Engine.pm blib/lib/List/Compare/Base/_Engine.pm
+    cp lib/List/Compare.pm blib/lib/List/Compare.pm
+    Manifying 4 pod documents
+    ok 1 - Running tests only
+    ok 2 - Got expected subset relationship
+    ok 3 - Got expected subset relationship
+    ok 4 - Got expected subset relationship
+    1..4
+
+Example with C<--benchmarks-only>:
+
+    $ perl /home/jkeenan/gitwork/compare-git-versions/compare-git-versions   \
+        --workdir=/home/jkeenan/gitwork/list-compare \
+        --program=/home/jkeenan/learn/perl/lc/subset.pl \
+        --before=master \
+        --after=refactored
+        --benchmarks-only
+    Switched to branch 'master'
+    Your branch is up-to-date with 'origin/master'.
+    Checking if your kit is complete...
+    Looks good
+    Generating a Unix-style Makefile
+    Writing Makefile for List::Compare
+    Writing MYMETA.yml and MYMETA.json
+    cp lib/List/Compare.pm blib/lib/List/Compare.pm
+    cp lib/List/Compare/Base/_Engine.pm blib/lib/List/Compare/Base/_Engine.pm
+    cp lib/List/Compare/Base/_Auxiliary.pm
+    blib/lib/List/Compare/Base/_Auxiliary.pm
+    cp lib/List/Compare/Functional.pm blib/lib/List/Compare/Functional.pm
+    Manifying 4 pod documents
+    ok 1 - Running benchmarks only
+    timethis 20000:  1 wallclock secs ( 1.74 usr +  0.00 sys =  1.74 CPU) @ 11494.25/s (n=20000)
+    timethis 20000:  2 wallclock secs ( 1.74 usr +  0.00 sys =  1.74 CPU) @ 11494.25/s (n=20000)
+    timethis 20000:  2 wallclock secs ( 1.71 usr +  0.00 sys =  1.71 CPU) @ 11695.91/s (n=20000)
+    1..1
+    Switched to branch 'refactored'
+    Checking if your kit is complete...
+    Looks good
+    Generating a Unix-style Makefile
+    Writing Makefile for List::Compare
+    Writing MYMETA.yml and MYMETA.json
+    cp lib/List/Compare.pm blib/lib/List/Compare.pm
+    cp lib/List/Compare/Functional.pm blib/lib/List/Compare/Functional.pm
+    cp lib/List/Compare/Base/_Auxiliary.pm
+    blib/lib/List/Compare/Base/_Auxiliary.pm
+    cp lib/List/Compare/Base/_Engine.pm blib/lib/List/Compare/Base/_Engine.pm
+    Manifying 4 pod documents
+    ok 1 - Running benchmarks only
+    timethis 20000:  1 wallclock secs ( 0.95 usr +  0.00 sys =  0.95 CPU) @ 21052.63/s (n=20000)
+    timethis 20000:  1 wallclock secs ( 0.96 usr +  0.00 sys =  0.96 CPU) @ 20833.33/s (n=20000)
+    timethis 20000:  1 wallclock secs ( 0.92 usr +  0.00 sys =  0.92 CPU) @ 21739.13/s (n=20000)
+    1..1
+
 
 =head1 BUGS
 
@@ -229,3 +437,4 @@ express or implied.  Copyright 2015 James E Keenan.
 
 =cut
 
+# vim: syn=perl
