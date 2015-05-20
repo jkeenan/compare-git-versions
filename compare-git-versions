@@ -8,7 +8,8 @@ use File::Spec;
 use Getopt::Long;
 our $VERSION = 0.01;
 
-my ($workdir, $program, $before, $after, $benchmarks_only, $tests_only, $verbose);
+my ($workdir, $program, $before, $after) = ('') x 4;
+my ($benchmarks_only, $tests_only, $verbose) = ('') x 3;
 my ($blib_lib_dir, $cmd);
 
 =head1 NAME
@@ -68,8 +69,27 @@ GetOptions(
     "tests-only"        => \$tests_only,
     "verbose"           => \$verbose,
 ) or croak("Error in command line arguments");
+
+my %required = (
+    workdir => $workdir,
+    program => $program,
+    before  => $before,
+    after   => $after,
+);
+my @missing = ();
+for my $switch (keys %required) {
+    push @missing, $switch unless $required{$switch};
+}
+my $fail = "Must supply values for command-line switches:";
+for my $m (@missing) {
+    $fail .= ' --' . $m;
+}
+$fail .= "\n";
+croak($fail) if @missing;
+
 croak("Select either 'tests-only' or 'benchmarks-only' -- but not both!")
     if ($tests_only && $benchmarks_only);
+
 my $reduction = $tests_only ? '--tests-only' :
                 $benchmarks_only ? '--benchmarks-only' :
                 '';
@@ -307,19 +327,21 @@ All command-line options use the double-hyphen syntax.
 
 =item * C<workdir>
 
-The full path to your git checkout directory.
+The full path to your git checkout directory.  Required.
 
 =item * C<program>
 
-The full path to the Direct program described above.
+The full path to the Direct program described above.  Required.
 
 =item * C<before>
 
-A string holding the git branch, tag, or commit against which you wish to benchmark your changes.
+A string holding the git branch, tag, or commit against which you wish to
+benchmark your changes.  Required.
 
 =item * C<after>
 
 A string holding the git branch, tag, or commit you wish to benchmark.
+Required.
 
 =item * C<benchmarks-only>
 
@@ -337,7 +359,8 @@ output.
 
 =back
 
-You may select either C<--benchmarks-only> or C<--tests-only> but not both simultaneously.
+You may select either C<--benchmarks-only> or C<--tests-only> but not both
+simultaneously.
 
 Example with C<--tests-only>:
 
