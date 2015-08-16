@@ -27,4 +27,4 @@ $i_ref = get_intersection_ref($args);
 is_deeply( { map { $_ => 1 } @{$i_ref} }, $expect,
     "List::Compare::Functional::get_intersection_ref() gave expected results");
 
-timethis( 100_000, sub { get_intersection_ref($args) } );
+timethis( 30_000, sub { get_intersection_ref($args) } );
